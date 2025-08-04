@@ -46,7 +46,6 @@ const oauth2Client = new google.auth.OAuth2(
 
 // Armazenamento temporário de tokens (em um cenário de produção, use um banco de dados como Redis)
 const userTokens: { [userId: string]: any } = {};
-
 app.get('/', (req, res) => {
   res.send('FMSAS API is running!');
 });
