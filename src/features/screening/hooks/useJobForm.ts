@@ -2,10 +2,10 @@
 
 import { useState, useCallback } from 'react';
 import { JobFormData, JobPosting } from '../types';
-// Remova: import { baserow } from '../../../shared/services/baserowClient'; // REMOVA esta linha
 import { useAuth } from '../../auth/hooks/useAuth';
 
-// Remova: const VAGAS_TABLE_ID = '709'; // REMOVA esta linha
+// Pega a URL base da API das variáveis de ambiente do Vite
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export const useJobForm = () => {
   const { profile } = useAuth();
@@ -47,11 +47,10 @@ export const useJobForm = () => {
         "endereco": formData.endereco,
         "requisitos_obrigatorios": formData.requiredSkills,
         "requisitos_desejaveis": formData.desiredSkills,
-        "usuario": [profile.id] // Envia o ID do usuário logado para associar
+        "usuario": [profile.id]
       };
 
-      // Chame o backend para criar a vaga
-      const response = await fetch('/api/jobs', {
+      const response = await fetch(`${API_BASE_URL}/api/jobs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newJobData),
@@ -85,8 +84,7 @@ export const useJobForm = () => {
         "requisitos_desejaveis": formData.desiredSkills,
       };
 
-      // Chame o backend para atualizar a vaga
-      const response = await fetch(`/api/jobs/${jobId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/jobs/${jobId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedJobData),

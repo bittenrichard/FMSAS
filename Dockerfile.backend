@@ -1,0 +1,43 @@
+# Dockerfile.backend
+
+# --- Estágio 1: Build ---
+# Usamos uma imagem Node mais robusta para compilar o TypeScript
+FROM node:20-alpine AS build
+
+# Define o diretório de trabalho dentro do contêiner
+WORKDIR /app
+
+# Copia os arquivos de manifesto de pacotes
+COPY package.json ./
+COPY package-lock.json ./
+
+# Instala as dependências de produção
+RUN npm install --omit=dev
+
+# Copia todo o resto do código-fonte
+COPY . .
+
+# Compila o TypeScript para JavaScript
+# O tsconfig.server.json garante que apenas o backend seja compilado
+RUN npm run build:server
+
+
+# --- Estágio 2: Produção ---
+# Usamos uma imagem Node mais leve para a execução
+FROM node:20-slim
+
+# Define o diretório de trabalho
+WORKDIR /app
+
+# Copia o package.json para o caso de precisarmos de alguma informação dele
+COPY package.json ./
+
+# Copia os artefatos compilados do estágio de build
+COPY --from=build /app/dist-server ./dist-server
+COPY --from=build /app/node_modules ./node_modules
+
+# Expõe a porta em que o servidor Express roda
+EXPOSE 3001
+
+# Comando para iniciar o servidor em produção
+CMD ["node", "./dist-server/server.js"]

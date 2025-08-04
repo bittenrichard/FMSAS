@@ -2,11 +2,6 @@
 
 import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { AuthState, LoginCredentials, SignUpCredentials, UserProfile } from '../types';
-// Remova: import { baserow } from '../../../shared/services/baserowClient'; // REMOVA esta linha
-// Remova: import bcrypt from 'bcryptjs'; // REMOVA esta linha
-
-// Remova: const USERS_TABLE_ID = '711'; // REMOVA esta linha
-// Remova: const SALT_ROUNDS = 10; // REMOVA esta linha
 
 interface AuthContextType extends AuthState {
   error: string | null;
@@ -22,6 +17,9 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 interface AuthProviderProps {
   children: ReactNode;
 }
+
+// Pega a URL base da API das variáveis de ambiente do Vite
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
@@ -65,7 +63,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     try {
       // Chame o backend para buscar o perfil atualizado
-      const response = await fetch(`/api/users/${authState.profile.id}`);
+      const response = await fetch(`${API_BASE_URL}/api/users/${authState.profile.id}`);
       if (!response.ok) {
         throw new Error('Falha ao buscar perfil atualizado.');
       }
@@ -82,7 +80,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setAuthError(null);
     setAuthState(prev => ({ ...prev, isLoading: true }));
     try {
-      const response = await fetch('/api/auth/signup', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),
@@ -109,7 +107,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setAuthError(null);
     setAuthState(prev => ({ ...prev, isLoading: true }));
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),
