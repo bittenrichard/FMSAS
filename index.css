@@ -1,0 +1,420 @@
+/* Local: src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animação de fade-in */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Classe utilitária para a fonte */
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+/* --- ESTILOS PERSONALIZADOS PARA O CALENDÁRIO PROFISSIONAL (React Big Calendar) --- */
+
+/* Container geral do calendário */
+.rbc-calendar {
+  border: none;
+  height: 100% !important; /* Ajusta a altura para o container pai */
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  font-family: 'Inter', sans-serif;
+  background-color: #ffffff; /* Fundo do calendário */
+  border: 1px solid #e0e0e0; /* Borda externa fina */
+  border-radius: 12px; /* Cantos mais arredondados */
+  overflow: hidden; /* Garante que bordas e conteúdo interno se adaptem */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05); /* Sombra suave para o calendário todo */
+}
+
+/* Escondemos a Toolbar padrão */
+.rbc-toolbar {
+  display: none !important;
+}
+
+/* Header dos dias (Dom, Seg, Ter...) - Estilo limpo e profissional */
+.rbc-header {
+  @apply text-center text-xs font-semibold uppercase;
+  color: #a0a0a0; /* Cor cinza mais clara */
+  background-color: #fcfcfc; /* Fundo branco/cinza sutil */
+  padding: 12px 0; /* Padding maior */
+  border-bottom: 1px solid #e5e5e5; /* Borda fina */
+  border-right: 1px solid #e0e0e0; /* Manter borda entre dias do cabeçalho */
+  border-left: none !important;
+}
+.rbc-header:last-child {
+  border-right: none !important;
+}
+
+/* Células da visualização MENSAL */
+.rbc-month-view {
+  border: none !important; /* Remover bordas externas do mês */
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  padding: 8px; /* Adiciona padding para as "células-card" dentro do container */
+}
+
+.rbc-month-row {
+  border-bottom: none !important; /* Remove a borda padrão entre as semanas */
+  display: flex;
+  flex-grow: 1;
+}
+.rbc-month-row:last-child {
+  border-bottom: none !important; /* Remover borda da última semana */
+}
+
+/* Fundo e bordas de cada dia individual (célula) - Cartões de dia */
+.rbc-day-bg {
+  border: 1px solid #e5e5e5 !important; /* Borda para cada "card" do dia */
+  border-radius: 8px !important; /* Cantos arredondados para cada card */
+  margin: 4px !important; /* Adiciona margem para criar o espaçamento entre os cards */
+  flex-grow: 1;
+  background-color: #ffffff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04); /* Sombra suave para cada card */
+  transition: background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  position: relative;
+  overflow: hidden;
+  padding-top: 30px; /* Espaço para o número do dia no topo */
+  padding-bottom: 25px; /* Espaço para os pontos de evento na parte inferior */
+  cursor: pointer; /* Indica que o dia é clicável */
+}
+
+/* Remover bordas extras que podem surgir devido ao flex */
+.rbc-day-bg:first-child {
+  border-left: 1px solid #e5e5e5 !important; /* Garante borda esquerda no primeiro dia da semana */
+}
+
+/* Estilo para o dia selecionado */
+.rbc-day-bg.rbc-selected-day {
+  background-color: #e0e7ff !important; /* Fundo azul claro para o dia selecionado */
+  border-color: #6366f1 !important; /* Borda da cor primária */
+  box-shadow: 0 2px 8px rgba(99,102,241,0.2); /* Sombra mais destacada */
+}
+
+/* Número do dia dentro da célula - POSICIONAMENTO E ESTILO CORRIGIDO */
+/* Este é o elemento que contém o número do dia (e.g., 1, 2, 3...) */
+.rbc-date-cell {
+  position: absolute; /* Posiciona o número no canto superior esquerdo */
+  top: 8px;
+  left: 8px;
+  padding: 0 !important;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  font-size: 1rem;
+  z-index: 2; /* Acima dos eventos e do conteúdo padrão do RBC */
+  width: auto !important;
+  height: auto !important;
+  /* NOVO: Garante que o texto seja visível */
+  opacity: 1 !important; 
+  visibility: visible !important;
+}
+.rbc-date-cell span {
+  display: block; /* Garante que o número ocupe seu próprio bloco */
+}
+
+/* Alinhamento do conteúdo da célula para eventos */
+.rbc-row-content {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  padding: 0 !important;
+  position: relative; /* Para eventos com position absolute */
+}
+
+
+/* Número do dia de hoje - Estilo Profissional */
+.rbc-day-bg.rbc-today {
+  background-color: #f0f4ff !important;
+  border-color: #4f46e5 !important;
+}
+.rbc-date-cell.rbc-today span {
+  color: #4f46e5 !important;
+  font-weight: 700 !important;
+  background-color: transparent !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+/* Altera o estilo do span do número do dia se o dia de hoje for o selecionado */
+.rbc-day-bg.rbc-today .rbc-date-cell.rbc-current span {
+  background-color: #4f46e5 !important;
+  color: white !important;
+  border-radius: 9999px !important;
+  padding: 2px 8px !important;
+  font-weight: bold !important;
+}
+
+
+/* Células de dias fora do mês atual - ESCONDER COMPLETAMENTE E NÃO OCUPAR ESPAÇO */
+.rbc-off-range-bg {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  box-shadow: none !important;
+  flex: 0 0 0 !important;
+}
+/* Garante que nenhum elemento de dias fora do range seja visível */
+.rbc-off-range .rbc-date-cell,
+.rbc-off-range .rbc-event,
+.rbc-off-range .rbc-show-more {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Estilo base para eventos (válido para semana/dia) */
+.rbc-event {
+  border-radius: 4px !important;
+  box-shadow: none !important;
+  border: none !important;
+  opacity: 1 !important;
+  color: white !important;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.1s ease-out;
+  height: auto !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  position: relative; 
+  margin: 0 4px 2px 4px !important;
+  padding: 2px 6px !important;
+  font-size: 0.75rem !important;
+  line-height: 1.2 !important;
+  z-index: 1; /* Abaixo do número do dia */
+}
+.rbc-event:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.rbc-event-label { display: none; } /* Esconde o label padrão do evento */
+.rbc-event-content {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
+/* Estilo específico para EVENTOS na VISUALIZAÇÃO DE MÊS (Pequenos Pontos Coloridos) */
+/* O .rbc-event (elemento pai dos pontos) precisa ter display: flex para que os pontos se alinhem. */
+.rbc-month-view .rbc-event {
+  background-color: transparent !important; /* A cor será dada pelo div interno */
+  color: transparent !important; /* Sem texto visível */
+  width: 8px !important; /* Largura do ponto */
+  height: 8px !important; /* Altura do ponto */
+  border-radius: 9999px; /* Transforma em círculo */
+  margin: 0 2px 2px 2px !important; /* Pequena margem entre os pontos */
+  padding: 0 !important;
+  position: relative !important; /* Permite posicionar e ter fluxo normal */
+  top: auto !important;
+  left: auto !important;
+  transform: none !important;
+  bottom: 0px; /* Alinha os pontos na parte inferior da célula */
+  display: inline-block !important; /* Permite que os pontos se organizem lado a lado */
+  vertical-align: middle; /* Alinhamento vertical dos pontos */
+  box-shadow: 0 0 3px rgba(0,0,0,0.2); /* Sombra sutil para destacar o ponto */
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0; /* Não permite que os pontos encolham */
+  overflow: hidden; /* Garante que nada vaze */
+}
+
+.rbc-month-view .rbc-event:hover {
+  transform: scale(1.2) !important; /* Efeito de zoom ao passar o mouse */
+  box-shadow: 0 0 6px rgba(0,0,0,0.3); /* Sombra mais intensa no hover */
+  z-index: 3; /* Garante que o ponto em hover esteja acima dos outros */
+}
+
+/* O conteúdo real da bolinha (o background color) */
+.rbc-month-view .rbc-event .rbc-event-content {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px; /* Garante que a cor preencha o círculo */
+  /* A cor de fundo será definida via `style` no CustomEvent */
+  display: block; /* Garante que o conteúdo preencha a bolinha */
+}
+
+/* Esconde o texto do evento em month view, já que estamos usando apenas pontos */
+.rbc-month-view .rbc-event .rbc-event-content strong,
+.rbc-month-view .rbc-event .rbc-event-content span {
+    display: none !important;
+}
+
+/* Container para os pontos de evento dentro de cada dia do mês */
+/* Este é o espaço onde os pontos de evento serão renderizados */
+/* O rbc-row-content contém rbc-row que contém os rbc-events */
+.rbc-month-view .rbc-row-content .rbc-row {
+  position: absolute;
+  bottom: 0px; /* Posição para os pontos de evento */
+  left: 0;
+  right: 0;
+  display: flex; /* Flex para alinhar os pontos lado a lado */
+  justify-content: center; /* Centraliza os pontos horizontalmente */
+  align-items: flex-end; /* Alinha os pontos na parte inferior */
+  padding: 0 4px 4px 4px; /* Padding para os pontos ficarem visíveis */
+  flex-wrap: wrap; /* Permite que os pontos quebrem para a próxima linha se houver muitos */
+  gap: 2px; /* Espaçamento entre os pontos */
+  height: 25px; /* Altura para os pontos e o +X mais */
+  overflow: hidden; /* Esconde se passar da altura definida */
+  z-index: 1; /* Abaixo do número do dia */
+}
+
+
+/* Estilo para "more" (o +X more) */
+.rbc-show-more {
+  background-color: transparent !important;
+  color: #6366f1 !important;
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  text-decoration: none !important;
+  cursor: pointer;
+  /* NOVO: Ajuste de posicionamento para o rbc-show-more para ficar perto dos pontos */
+  position: absolute;
+  bottom: 4px; /* Mais acima dos pontos, ou alinhado com eles */
+  right: 8px;
+  left: auto; /* Desfaz o left: 0 */
+  display: flex; /* Para centralizar o texto */
+  justify-content: center;
+  align-items: center;
+  padding: 2px 4px !important;
+  z-index: 2;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 9999px;
+  background-color: rgba(99, 102, 241, 0.1) !important; /* Um fundo sutil para o "mais" */
+}
+.rbc-show-more:hover {
+  text-decoration: underline !important;
+  background-color: rgba(99, 102, 241, 0.2) !important;
+}
+
+/* Estilos para a visualização semanal (rbc-week-view) e diária (rbc-day-view) */
+.rbc-week-view, .rbc-day-view {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+/* Estilos ESPECÍFICOS para a grade de tempo (horas) nas visualizações de SEMANA e DIA */
+.rbc-week-view .rbc-time-content,
+.rbc-day-view .rbc-time-content {
+  display: flex;
+  flex-direction: row;
+  flex-grow: 1;
+  border-top: 1px solid #e0e0e0;
+  overflow-y: auto;
+}
+
+/* Cabeçalho de tempo nas visualizações de SEMANA e DIA */
+.rbc-week-view .rbc-time-header,
+.rbc-day-view .rbc-time-header {
+  border-bottom: 1px solid #e0e0e0;
+  background-color: #fcfcfc;
+}
+
+/* Células de cabeçalho de dia na SEMANA/DIA view */
+.rbc-week-view .rbc-time-header-content .rbc-header,
+.rbc-day-view .rbc-time-header-content .rbc-header {
+  border-left: 1px solid #e0e0e0;
+  border-right: none !important;
+}
+.rbc-week-view .rbc-time-header-content .rbc-header:first-child,
+.rbc-day-view .rbc-time-header-content .rbc-header:first-child {
+  border-left: none !important;
+}
+
+/* Coluna de horas à esquerda na SEMANA/DIA view */
+.rbc-week-view .rbc-time-content .rbc-time-gutter,
+.rbc-day-view .rbc-time-content .rbc-time-gutter {
+  border-right: 1px solid #e0e0e0;
+  background-color: #fcfcfc;
+  flex-shrink: 0;
+}
+
+/* Cada coluna de dia na SEMANA/DIA view */
+.rbc-week-view .rbc-time-content .rbc-day-slot,
+.rbc-day-view .rbc-time-content .rbc-day-slot {
+  border-left: 1px solid #e0e0e0;
+  border-right: none !important;
+  flex-grow: 1;
+  position: relative;
+}
+.rbc-week-view .rbc-time-content .rbc-day-slot:first-child,
+.rbc-day-view .rbc-time-content .rbc-day-slot:first-child {
+  border-left: none !important;
+}
+
+/* Grupos de slots de tempo na SEMANA/DIA view */
+.rbc-week-view .rbc-timeslot-group,
+.rbc-day-view .rbc-timeslot-group {
+  border-bottom: 1px solid #e0e0e0;
+  min-height: 40px;
+}
+.rbc-week-view .rbc-time-slot,
+.rbc-day-view .rbc-time-slot {
+  min-height: 20px;
+}
+
+/* Rótulos de tempo (e.g., 9 AM) na SEMANA/DIA view */
+.rbc-week-view .rbc-time-content .rbc-label,
+.rbc-day-view .rbc-time-content .rbc-label {
+  padding: 0 10px;
+  font-size: 0.8rem;
+  color: #888;
+  text-align: right;
+  flex-grow: 1;
+}
+
+/* Eventos na visualização semanal/diária (blocos de tempo) */
+.rbc-week-view .rbc-day-slot .rbc-event,
+.rbc-day-view .rbc-day-slot .rbc-event {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: auto !important;
+  height: auto !important;
+  padding: 4px 8px !important;
+  font-size: 0.8rem !important;
+  border-radius: 4px !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin: 0 2px !important;
+}
+
+/* Esconde scrollbar para Webkit browsers */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Esconde scrollbar para Firefox */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}

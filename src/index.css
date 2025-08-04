@@ -1,0 +1,209 @@
+/* Local: src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Animação de fade-in */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Classe utilitária para a fonte */
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+/* --- ESTILOS PERSONALIZADOS PARA O NOVO CALENDÁRIO --- */
+
+/* Classes para o contêiner geral do calendário */
+.calendar-container {
+  border: none;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+/* Estilos para o cabeçalho dos dias da semana (DOM, SEG, etc.) */
+.calendar-day-header {
+  @apply text-center text-xs font-semibold uppercase;
+  color: #a0a0a0;
+  background-color: #fcfcfc;
+  padding: 12px 0;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+/* Estilos para as células dos dias do calendário */
+.calendar-day-cell {
+  position: relative;
+  height: 100px; /* Altura padrão para as células do mês */
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  margin: 4px; /* Espaçamento entre os cartões dos dias */
+  background-color: #ffffff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+  transition: background-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  cursor: pointer;
+  overflow: hidden; /* Garante que os pontos de evento e número do dia não vazem */
+  display: flex; /* Para controlar o conteúdo interno */
+  flex-direction: column; /* Conteúdo em coluna */
+  justify-content: flex-start; /* Alinha conteúdo ao topo */
+  align-items: flex-start; /* Alinha conteúdo à esquerda */
+  padding: 8px; /* Padding interno */
+}
+
+.calendar-day-cell:hover {
+  background-color: #f0f4ff; /* Fundo suave no hover */
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Estilo para o número do dia dentro da célula */
+.calendar-day-number {
+  font-weight: 600;
+  color: #374151;
+  font-size: 1rem;
+  z-index: 2; /* Garante que o número fique acima de tudo */
+  padding-bottom: 4px; /* Espaçamento abaixo do número */
+}
+
+/* Estilo para o dia de hoje */
+.calendar-day-cell.is-today {
+  background-color: #f0f4ff;
+  border-color: #4f46e5;
+}
+.calendar-day-cell.is-today .calendar-day-number {
+  color: #4f46e5;
+  font-weight: 700;
+}
+
+/* Estilo para o dia selecionado */
+.calendar-day-cell.is-selected {
+  background-color: #e0e7ff;
+  border-color: #6366f1;
+  box-shadow: 0 2px 8px rgba(99,102,241,0.2);
+}
+/* O círculo azul para o dia atual E selecionado */
+.calendar-day-cell.is-today.is-selected .calendar-day-number {
+  background-color: #4f46e5;
+  color: white;
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-weight: bold;
+  display: inline-block; /* Para o padding e background funcionarem */
+}
+
+
+/* Estilos para os pontos de evento no modo mês */
+.calendar-event-dot-container {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center; /* Centraliza os pontos */
+  align-items: flex-end; /* Alinha na parte inferior */
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  right: 0;
+  padding: 0 4px;
+  gap: 2px; /* Espaçamento entre os pontos */
+  height: 20px; /* Altura para os pontos */
+  overflow: hidden; /* Esconde se passar da altura */
+}
+
+.calendar-event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  box-shadow: 0 0 3px rgba(0,0,0,0.2);
+  transition: all 0.15s ease-in-out;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.calendar-event-dot:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 6px rgba(0,0,0,0.3);
+}
+
+/* Estilo para o indicador "+X more" */
+.calendar-more-events {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6366f1;
+  background-color: rgba(99, 102, 241, 0.1);
+  border-radius: 9999px;
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+}
+
+.calendar-more-events:hover {
+  background-color: rgba(99, 102, 241, 0.2);
+  text-decoration: underline;
+}
+
+
+/* Estilos para os cards de evento em Week/Day view - CLASSE PRINCIPAL DOS EVENTOS AGORA */
+.event-card {
+  @apply flex flex-col h-full p-2 rounded-md text-white overflow-hidden shadow-md cursor-pointer;
+  font-size: 0.8rem;
+  transition: transform 0.1s ease-out;
+  /* NOVO: Garante que o background-color seja transparente por padrão para o estilo inline ter precedência */
+  background-color: transparent !important; /* Força transparência aqui */
+}
+.event-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.event-card strong {
+  @apply text-sm font-bold truncate;
+}
+.event-card p {
+  @apply text-xs mt-1 flex items-center opacity-90;
+}
+.event-card p svg {
+  @apply mr-1 flex-shrink-0;
+}
+
+
+/* REMOVIDO: Regras antigas do React Big Calendar para evitar conflitos */
+/* Garanta que NÃO haja regras .rbc-* que sobrescrevam nossos elementos */
+
+
+/* Esconde scrollbar para Webkit browsers */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+/* Esconde scrollbar para Firefox */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
