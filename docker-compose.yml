@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # --- Serviço do Backend (API) ---
+  backend:
+    # IMPORTANTE: Substitua 'seu-usuario-dockerhub' pelo seu nome de usuário no Docker Hub
+    # Exemplo: image: orickjogando/recrutamentoia-backend:1.0.0
+    image: orickjogando/recrutamentoia-backend:1.0.0
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    env_file:
+      - ./.env.production
+    networks:
+      - traefik_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        # --- Configuração do Traefik para o Backend ---
+        - "traefik.enable=true"
+        - "traefik.docker.network=Foco"
+        # Roteador para a API na URL api.recrutamentoia.com.br
+        - "traefik.http.routers.backend-router.rule=Host(`api.recrutamentoia.com.br`)"
+        - "traefik.http.routers.backend-router.entrypoints=websecure"
+        - "traefik.http.routers.backend-router.tls.certresolver=letsencryptresolver"
+        # Serviço que aponta para a porta interna da API (3001)
+        - "traefik.http.services.backend-service.loadbalancer.server.port=3001"
+
+  # --- Serviço do Frontend (React App) ---
+  frontend:
+    # IMPORTANTE: Substitua 'seu-usuario-dockerhub' pelo seu nome de usuário no Docker Hub
+    # Exemplo: image: orickjogando/recrutamentoia-frontend:1.0.0
+    image: orickjogando/recrutamentoia-frontend:1.0.0
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+      args:
+        # Passa a URL da API como argumento de build para o Vite
+        VITE_API_BASE_URL: https://api.recrutamentoia.com.br
+    networks:
+      - traefik_network
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        # --- Configuração do Traefik para o Frontend ---
+        - "traefik.enable=true"
+        - "traefik.docker.network=Foco"
+        # Roteador para o Frontend na URL recrutamentoia.com.br (com e sem www)
+        - "traefik.http.routers.frontend-router.rule=Host(`recrutamentoia.com.br`) || Host(`www.recrutamentoia.com.br`)"
+        - "traefik.http.routers.frontend-router.entrypoints=websecure"
+        - "traefik.http.routers.frontend-router.tls.certresolver=letsencryptresolver"
+        # Serviço que aponta para a porta interna do Nginx (80)
+        - "traefik.http.services.frontend-service.loadbalancer.server.port=80"
+
+# --- Definição da Rede Externa do Traefik ---
+networks:
+  traefik_network:
+    external: true
+    name: Foco
