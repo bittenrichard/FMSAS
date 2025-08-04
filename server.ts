@@ -31,7 +31,7 @@ if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !proce
 // ATUALIZAÇÃO: Usa a origem diretamente, sem fallback para localhost.
 // O servidor irá falhar ao iniciar se a variável não estiver presente.
 const corsOptions = {
-  origin: process.env.FRONTEND_URL
+  origin: '*'
 };
 app.use(cors(corsOptions));
 
