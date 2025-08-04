@@ -9,8 +9,6 @@ services:
     build:
       context: .
       dockerfile: backend.Dockerfile
-    env_file:
-      - ./.env.production
     networks:
       - traefik_network
     deploy:
