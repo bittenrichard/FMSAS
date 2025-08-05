@@ -18,7 +18,7 @@ interface DataState {
 }
 
 // Pega a URL base da API das variáveis de ambiente do Vite
-const API_BASE_URL = 'https://endpoint.setorrp.com.br';
+const API_BASE_URL = 'https://api.recrutamentoia.com.br';
 
 export const useDataStore = create<DataState>((set) => ({
   jobs: [],
