@@ -1,154 +1,120 @@
-// Local: src/features/auth/context/AuthContext.tsx
+import { createContext, useState, useEffect, ReactNode } from 'react';
+import { User, AuthContextType, SignInCredentials, SignUpCredentials } from '../types';
+import { translateAuthError } from '../utils/errorTranslator';
 
-import React, { createContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { AuthState, LoginCredentials, SignUpCredentials, UserProfile } from '../types';
+// A URL base da API é lida da variável de ambiente injetada pelo Vite
+const API_URL = import.meta.env.VITE_API_BASE_URL;
 
-interface AuthContextType extends AuthState {
-  error: string | null;
-  signUp: (credentials: SignUpCredentials) => Promise<UserProfile | null>;
-  signIn: (credentials: LoginCredentials) => Promise<boolean>;
-  signOut: () => void;
-  updateProfile: (newProfileData: Partial<UserProfile>) => void;
-  refetchProfile: () => Promise<void>;
-}
-
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | null>(null);
 
 interface AuthProviderProps {
-  children: ReactNode;
+    children: ReactNode;
 }
 
-// Pega a URL base da API das variáveis de ambiente do Vite
-const API_BASE_URL = 'https://endpoint.setorrp.com.br';
-
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  const [authState, setAuthState] = useState<AuthState>({
-    profile: null,
-    isAuthenticated: false,
-    isLoading: true,
-  });
-  const [authError, setAuthError] = useState<string | null>(null);
+    const [user, setUser] = useState<User | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('userProfile');
-      if (storedUser) {
-        setAuthState({
-          profile: JSON.parse(storedUser),
-          isAuthenticated: true,
-          isLoading: false,
-        });
-      } else {
-        setAuthState(prev => ({ ...prev, isLoading: false }));
-      }
-    } catch (error) {
-      console.error("Falha ao carregar perfil do localStorage", error);
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-    }
-  }, []);
+    useEffect(() => {
+        const verifyUser = async () => {
+            const token = localStorage.getItem('token');
+            if (token) {
+                try {
+                    const response = await fetch(`${API_URL}/api/auth/me`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
 
-  const updateProfile = (newProfileData: Partial<UserProfile>) => {
-    setAuthState(prev => {
-        if (!prev.profile) return prev;
-        const updatedProfile = { ...prev.profile, ...newProfileData };
-        localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
-        return { ...prev, profile: updatedProfile };
-    });
-  };
+                    if (response.ok) {
+                        const data: User = await response.json();
+                        setUser(data);
+                    } else {
+                        localStorage.removeItem('token');
+                        setUser(null);
+                    }
+                } catch (err) {
+                    localStorage.removeItem('token');
+                    setUser(null);
+                }
+            }
+            setLoading(false);
+        };
 
-  const refetchProfile = useCallback(async () => {
-    if (!authState.profile?.id) {
-      console.warn("Tentativa de re-sincronizar perfil sem usuário logado.");
-      return;
-    }
-    try {
-      // Chame o backend para buscar o perfil atualizado
-      const response = await fetch(`${API_BASE_URL}/api/users/${authState.profile.id}`);
-      if (!response.ok) {
-        throw new Error('Falha ao buscar perfil atualizado.');
-      }
-      const userProfile: UserProfile = await response.json();
-      
-      localStorage.setItem('userProfile', JSON.stringify(userProfile));
-      setAuthState(prev => ({ ...prev, profile: userProfile }));
-    } catch (error) {
-      console.error("Erro ao re-sincronizar o perfil do usuário:", error);
-    }
-  }, [authState.profile?.id]);
+        verifyUser();
+    }, []);
 
-  const signUp = async (credentials: SignUpCredentials): Promise<UserProfile | null> => {
-    setAuthError(null);
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-      });
+    const signIn = async (credentials: SignInCredentials) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch(`${API_URL}/api/auth/login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(credentials)
+            });
 
-      const data = await response.json();
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Falha no login');
+            }
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao cadastrar. Tente novamente.');
-      }
-      
-      const userProfile: UserProfile = data.user;
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      return userProfile;
+            const data = await response.json();
+            localStorage.setItem('token', data.token);
+            setUser(data.user);
+        } catch (err: any) {
+            setError(translateAuthError(err.message));
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
 
-    } catch (error: any) {
-      setAuthError(error.message || 'Ocorreu um erro ao cadastrar. Tente novamente.');
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      return null;
-    }
-  };
+    const signUp = async (credentials: SignUpCredentials) => {
+        setLoading(true);
+        setError(null);
+        try {
+            const response = await fetch(`${API_URL}/api/auth/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(credentials)
+            });
 
-  const signIn = async (credentials: LoginCredentials): Promise<boolean> => {
-    setAuthError(null);
-    setAuthState(prev => ({ ...prev, isLoading: true }));
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-      });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Falha no registro');
+            }
 
-      const data = await response.json();
+            const data = await response.json();
+            localStorage.setItem('token', data.token);
+            setUser(data.user);
+        } catch (err: any) {
+            setError(translateAuthError(err.message));
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    };
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Falha no login. Verifique suas credenciais.');
-      }
-      
-      const userProfile: UserProfile = data.user;
-      localStorage.setItem('userProfile', JSON.stringify(userProfile));
-      setAuthState({ profile: userProfile, isAuthenticated: true, isLoading: false });
-      return true;
+    const signOut = () => {
+        localStorage.removeItem('token');
+        setUser(null);
+    };
 
-    } catch (error: any) {
-      setAuthError(error.message || 'Ocorreu um erro ao fazer login. Tente novamente.');
-      setAuthState(prev => ({ ...prev, isLoading: false }));
-      return false;
-    }
-  };
+    const updateUser = (updatedUser: Partial<User>) => {
+        if (user) {
+            setUser({ ...user, ...updatedUser });
+        }
+    };
 
-  const signOut = () => {
-    localStorage.clear();
-    setAuthState({ profile: null, isAuthenticated: false, isLoading: false });
-  };
-
-  const value = {
-    ...authState,
-    error: authError,
-    signUp,
-    signIn,
-    signOut,
-    updateProfile,
-    refetchProfile,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+    return (
+        <AuthContext.Provider value={{ user, loading, error, signIn, signUp, signOut, updateUser }}>
+            {children}
+        </AuthContext.Provider>
+    );
 };
