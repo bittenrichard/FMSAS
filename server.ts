@@ -1,7 +1,7 @@
 // Local: server.ts
 
 import dotenv from 'dotenv';
-dotenv.config(); // Carrega o .env da raiz
+dotenv.config({ path: `.env.${process.env.NODE_ENV || 'development'}` });
 
 import express, { Request, Response } from 'express';
 import cors from 'cors';
@@ -12,21 +12,9 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 
 const app = express();
-const port = process.env.PORT || 3001;
+const port = 3001;
 
-const upload = multer();
-
-// --- VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE CRÍTICAS ---
-if (!process.env.FRONTEND_URL) {
-  console.error("ERRO CRÍTICO: A variável de ambiente FRONTEND_URL não está definida.");
-  process.exit(1); // Encerra o processo se a URL do frontend não for encontrada
-}
-if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
-  console.error("ERRO CRÍTICO: As credenciais do Google não foram encontradas no arquivo .env");
-  process.exit(1);
-}
-// --- FIM DA VALIDAÇÃO ---
-
+const upload = multer(); // Multer para lidar com upload de arquivos
 
 // ATUALIZAÇÃO: Usa a origem diretamente, sem fallback para localhost.
 // O servidor irá falhar ao iniciar se a variável não estiver presente.
@@ -38,492 +26,675 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
+  console.error("ERRO CRÍTICO: As credenciais do Google não foram encontradas...");
+  process.exit(1);
+}
+
 const oauth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
   process.env.GOOGLE_REDIRECT_URI
 );
 
-// Armazenamento temporário de tokens (em um cenário de produção, use um banco de dados como Redis)
-const userTokens: { [userId: string]: any } = {};
-app.get('/', (req, res) => {
-  res.send('FMSAS API is running!');
-});
+// --- CONSTANTES DE ID DE TABELAS ---
+const USERS_TABLE_ID = '711';
+const VAGAS_TABLE_ID = '709';
+const CANDIDATOS_TABLE_ID = '710';
+const WHATSAPP_CANDIDATOS_TABLE_ID = '712';
+const AGENDAMENTOS_TABLE_ID = '713';
+const SALT_ROUNDS = 10;
 
-app.get('/api/users/:userId', async (req, res) => {
-  const { userId } = req.params;
+// Definir um tipo básico para as vagas que vêm do Baserow
+interface BaserowJobPosting {
+  id: number;
+  titulo: string;
+  usuario?: { id: number; value: string }[]; 
+}
+
+// Definir um tipo básico para os candidatos que vêm do Baserow
+interface BaserowCandidate {
+  id: number;
+  vaga?: { id: number; value: string }[] | string | null;
+  usuario?: { id: number; value: string }[] | null;
+  nome: string; 
+  telefone: string | null; 
+  curriculo?: { url: string; name: string }[] | null; 
+  score?: number | null;
+  resumo_ia?: string | null;
+  status?: { id: number; value: 'Triagem' | 'Entrevista' | 'Aprovado' | 'Reprovado' } | null;
+  data_triagem?: string;
+  // NOVO: Adicionado sexo, escolaridade e idade à interface BaserowCandidate
+  sexo?: string | null; // Adicionado
+  escolaridade?: string | null; // Adicionado
+  idade?: number | null; // Adicionado
+}
+
+
+// --- ENDPOINTS DE AUTENTICAÇÃO ---
+
+app.post('/api/auth/signup', async (req: Request, res: Response) => {
+  const { nome, empresa, telefone, email, password } = req.body;
+  if (!email || !password || !nome) {
+    return res.status(400).json({ error: 'Nome, email e senha são obrigatórios.' });
+  }
+
   try {
-      const { data } = await baserowServer.database.rows.get('users', Number(userId));
-      res.json(data);
-  } catch (error) {
-      console.error('Failed to fetch user profile:', error);
-      res.status(500).json({ error: 'Failed to fetch user profile' });
+    const emailLowerCase = email.toLowerCase();
+    const { results: existingUsers } = await baserowServer.get(USERS_TABLE_ID, `?filter__Email__equal=${emailLowerCase}`);
+    
+    if (existingUsers && existingUsers.length > 0) {
+      return res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    
+    const newUser = await baserowServer.post(USERS_TABLE_ID, {
+      nome,
+      empresa,
+      telefone,
+      Email: emailLowerCase,
+      senha_hash: hashedPassword,
+    });
+
+    const userProfile = {
+      id: newUser.id,
+      nome: newUser.nome,
+      email: newUser.Email,
+      empresa: newUser.empresa,
+      telefone: newUser.telefone,
+      avatar_url: newUser.avatar_url || null,
+      google_refresh_token: newUser.google_refresh_token || null,
+    };
+
+    res.status(201).json({ success: true, user: userProfile });
+  } catch (error: any) {
+    console.error('Erro no registro (backend):', error);
+    res.status(500).json({ error: error.message || 'Erro ao criar conta.' });
   }
 });
 
+app.post('/api/auth/login', async (req: Request, res: Response) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
+  }
+
+  try {
+    const emailLowerCase = email.toLowerCase();
+    const { results: users } = await baserowServer.get(USERS_TABLE_ID, `?filter__Email__equal=${emailLowerCase}`);
+    const user = users && users[0];
+
+    if (!user || !user.senha_hash) {
+      return res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.senha_hash);
+
+    if (passwordMatches) {
+      const userProfile = {
+        id: user.id,
+        nome: user.nome,
+        email: user.Email,
+        empresa: user.empresa,
+        telefone: user.telefone,
+        avatar_url: user.avatar_url || null,
+        google_refresh_token: user.google_refresh_token || null,
+      };
+      res.json({ success: true, user: userProfile });
+    } else {
+      res.status(401).json({ error: 'E-mail ou senha inválidos.' });
+    }
+  } catch (error: any) {
+    console.error('Erro no login (backend):', error);
+    res.status(500).json({ error: error.message || 'Erro ao fazer login.' });
+  }
+});
+
+// --- ENDPOINTS PARA GERENCIAR O PERFIL DO USUÁRIO ---
 app.patch('/api/users/:userId/profile', async (req: Request, res: Response) => {
   const { userId } = req.params;
-  const { name, email } = req.body;
+  const { nome, empresa, avatar_url } = req.body;
+  
+  if (!userId) {
+    return res.status(400).json({ error: 'ID do usuário é obrigatório.' });
+  }
 
   try {
-      // Atualiza no Baserow
-      const { data } = await baserowServer.database.rows.update('users', Number(userId), {
-          "nome": name,
-          "email": email
-      });
+    const updatedData: Record<string, any> = {};
+    if (nome !== undefined) updatedData.nome = nome;
+    if (empresa !== undefined) updatedData.empresa = empresa;
+    if (avatar_url !== undefined) updatedData.avatar_url = avatar_url;
 
-      res.json({ message: 'Profile updated successfully', user: data });
-  } catch (error) {
-      console.error('Error updating profile:', error);
-      res.status(500).json({ error: 'Failed to update profile' });
+    if (Object.keys(updatedData).length === 0) {
+      return res.status(400).json({ error: 'Nenhum dado para atualizar.' });
+    }
+
+    const updatedUser = await baserowServer.patch(USERS_TABLE_ID, parseInt(userId), updatedData);
+    
+    const userProfile = {
+      id: updatedUser.id,
+      nome: updatedUser.nome,
+      email: updatedUser.Email,
+      empresa: updatedUser.empresa,
+      telefone: updatedUser.telefone,
+      avatar_url: updatedUser.avatar_url || null,
+      google_refresh_token: updatedUser.google_refresh_token || null,
+    };
+
+    res.status(200).json({ success: true, user: userProfile });
+  } catch (error: any) {
+    console.error('Erro ao atualizar perfil (backend):', error);
+    res.status(500).json({ error: 'Não foi possível atualizar o perfil.' });
   }
 });
 
-app.patch('/api/users/:userId/password', async (req, res) => {
+app.patch('/api/users/:userId/password', async (req: Request, res: Response) => {
   const { userId } = req.params;
-  const { currentPassword, newPassword } = req.body;
+  const { password } = req.body;
+  
+  if (!userId || !password) {
+    return res.status(400).json({ error: 'ID do usuário e nova senha são obrigatórios.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres.' });
+  }
 
   try {
-      const { data: user } = await baserowServer.database.rows.get('users', Number(userId));
+    const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+    await baserowServer.patch(USERS_TABLE_ID, parseInt(userId), { senha_hash: hashedPassword });
+    res.json({ success: true, message: 'Senha atualizada com sucesso!' });
+  } catch (error: any) {
+    console.error('Erro ao atualizar senha (backend):', error);
+    res.status(500).json({ error: 'Não foi possível atualizar a senha. Tente novamente.' });
+  }
+});
 
-      const isMatch = await bcrypt.compare(currentPassword, user.senha as string);
-      if (!isMatch) {
-          return res.status(400).json({ error: "Senha atual incorreta." });
+app.get('/api/users/:userId', async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  if (!userId) {
+    return res.status(400).json({ error: 'ID do usuário é obrigatório.' });
+  }
+  try {
+    const user = await baserowServer.getRow(USERS_TABLE_ID, parseInt(userId));
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    }
+    const userProfile = {
+      id: user.id,
+      nome: user.nome,
+      email: user.Email,
+      empresa: user.empresa,
+      telefone: user.telefone,
+      avatar_url: user.avatar_url || null,
+      google_refresh_token: user.google_refresh_token || null,
+    };
+    res.json(userProfile);
+  } catch (error: any) {
+    console.error('Erro ao buscar perfil do usuário (backend):', error);
+    res.status(500).json({ error: 'Não foi possível buscar o perfil do usuário.' });
+  }
+});
+
+// --- NOVO ENDPOINT: UPLOAD DE AVATAR ---
+app.post('/api/upload-avatar', upload.single('avatar'), async (req: Request, res: Response) => {
+  const userId = req.body.userId;
+  if (!userId || !req.file) {
+    return res.status(400).json({ error: 'Arquivo e ID do usuário são obrigatórios.' });
+  }
+
+  try {
+    const fileBuffer = req.file.buffer;
+    const fileName = req.file.originalname;
+    const mimetype = req.file.mimetype;
+
+    const uploadedFile = await baserowServer.uploadFileFromBuffer(fileBuffer, fileName, mimetype);
+    const newAvatarUrl = uploadedFile.url;
+
+    const updatedUser = await baserowServer.patch(USERS_TABLE_ID, parseInt(userId), { avatar_url: newAvatarUrl });
+    
+    const userProfile = {
+      id: updatedUser.id,
+      nome: updatedUser.nome,
+      email: updatedUser.Email,
+      empresa: updatedUser.empresa,
+      telefone: updatedUser.telefone,
+      avatar_url: updatedUser.avatar_url || null,
+      google_refresh_token: updatedUser.google_refresh_token || null,
+    };
+    res.json({ success: true, avatar_url: newAvatarUrl, user: userProfile });
+
+  } catch (error: any) {
+    console.error('Erro ao fazer upload de avatar (backend):', error);
+    res.status(500).json({ error: error.message || 'Não foi possível fazer upload do avatar.' });
+  }
+});
+
+
+// --- ENDPOINTS PARA OPERAÇÕES DE VAGAS ---
+
+app.post('/api/jobs', async (req: Request, res: Response) => {
+  const { titulo, descricao, endereco, requisitos_obrigatorios, requisitos_desejaveis, usuario } = req.body;
+  if (!titulo || !descricao || !usuario || usuario.length === 0) {
+    return res.status(400).json({ error: 'Título, descrição e ID do usuário são obrigatórios.' });
+  }
+
+  try {
+    const createdJob = await baserowServer.post(VAGAS_TABLE_ID, {
+      titulo,
+      descricao,
+      Endereco: endereco,
+      requisitos_obrigatorios,
+      requisitos_desejaveis,
+      usuario,
+    });
+    res.status(201).json(createdJob);
+  } catch (error: any) {
+    console.error('Erro ao criar vaga (backend):', error);
+    res.status(500).json({ error: 'Não foi possível criar a vaga.' });
+  }
+});
+
+app.patch('/api/jobs/:jobId', async (req: Request, res: Response) => {
+  const { jobId } = req.params;
+  const updatedData = req.body;
+  if (!jobId || Object.keys(updatedData).length === 0) {
+    return res.status(400).json({ error: 'ID da vaga e dados para atualização são obrigatórios.' });
+  }
+
+  try {
+    const updatedJob = await baserowServer.patch(VAGAS_TABLE_ID, parseInt(jobId), updatedData);
+    res.json(updatedJob);
+  } catch (error: any) {
+    console.error('Erro ao atualizar vaga (backend):', error);
+    res.status(500).json({ error: 'Não foi possível atualizar a vaga.' });
+  }
+});
+
+app.delete('/api/jobs/:jobId', async (req: Request, res: Response) => {
+  const { jobId } = req.params;
+  if (!jobId) {
+    return res.status(400).json({ error: 'ID da vaga é obrigatório.' });
+  }
+
+  try {
+    await baserowServer.delete(VAGAS_TABLE_ID, parseInt(jobId));
+    res.status(204).send();
+  } catch (error: any) {
+    console.error('Erro ao deletar vaga (backend):', error);
+    res.status(500).json({ error: 'Não foi possível excluir a vaga.' });
+  }
+});
+
+// --- ENDPOINTS PARA OPERAÇÕES DE CANDIDATOS ---
+
+app.patch('/api/candidates/:candidateId/status', async (req: Request, res: Response) => {
+  const { candidateId } = req.params;
+  const { status } = req.body;
+  
+  if (!candidateId || !status) {
+    return res.status(400).json({ error: 'ID do candidato e status são obrigatórios.' });
+  }
+
+  const validStatuses = ['Triagem', 'Entrevista', 'Aprovado', 'Reprovado'];
+  if (!validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Status inválido fornecido.' });
+  }
+
+  try {
+    // CORREÇÃO: A API do Baserow para campos 'Single Select' com user_field_names=true
+    // espera a própria string como valor, não um objeto.
+    const updatedCandidate = await baserowServer.patch(CANDIDATOS_TABLE_ID, parseInt(candidateId), { status: status });
+    
+    res.json(updatedCandidate);
+  } catch (error: any) {
+    console.error('Erro ao atualizar status do candidato (backend):', error);
+    res.status(500).json({ error: 'Não foi possível atualizar o status do candidato.' });
+  }
+});
+
+// Endpoint para buscar todos os dados de vagas e candidatos de um usuário (Centralizado)
+app.get('/api/data/all/:userId', async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  if (!userId) {
+    return res.status(400).json({ error: 'ID do usuário é obrigatório.' });
+  }
+
+  try {
+    // Busca todas as vagas
+    const jobsResult = await baserowServer.get(VAGAS_TABLE_ID, '');
+    const allJobs: BaserowJobPosting[] = (jobsResult.results || []) as BaserowJobPosting[];
+    // Filtra vagas por usuário
+    const userJobs = allJobs.filter((j: BaserowJobPosting) => j.usuario && j.usuario.some((u: any) => u.id === parseInt(userId)));
+
+    // Busca todos os candidatos das duas tabelas (CANDIDATOS_TABLE_ID e WHATSAPP_CANDIDATOS_TABLE_ID)
+    const regularCandidatesResult = await baserowServer.get(CANDIDATOS_TABLE_ID, '');
+    const whatsappCandidatesResult = await baserowServer.get(WHATSAPP_CANDIDATOS_TABLE_ID, '');
+
+    const allCandidatesRaw: BaserowCandidate[] = [
+      ...(regularCandidatesResult.results || []),
+      ...(whatsappCandidatesResult.results || [])
+    ] as BaserowCandidate[];
+
+    // Filtra candidatos por usuário
+    const userCandidatesRaw = allCandidatesRaw.filter((c: BaserowCandidate) => c.usuario && c.usuario.some((u: any) => u.id === parseInt(userId)));
+
+    // Criar mapas de vagas por ID e Título para sincronização mais eficiente
+    const jobsMapById = new Map<number, BaserowJobPosting>(userJobs.map((job: BaserowJobPosting) => [job.id, job]));
+    const jobsMapByTitle = new Map<string, BaserowJobPosting>(userJobs.map((job: BaserowJobPosting) => [job.titulo.toLowerCase().trim(), job]));
+
+    // Sincroniza os candidatos: Garante que o campo 'vaga' seja sempre um objeto { id, value }
+    // Este é um ponto CRÍTICO. Se o 'vaga' vier como string e não for mapeado para um link de vaga,
+    // o filtro de vaga no frontend pode falhar.
+    const syncedCandidates = userCandidatesRaw.map((candidate: BaserowCandidate) => {
+      const newCandidate = { ...candidate };
+      let vagaLink: { id: number; value: string }[] | null = null;
+
+      // Se candidate.vaga é uma string (Baserow WhatsApp candidatos)
+      if (candidate.vaga && typeof candidate.vaga === 'string') {
+        const jobMatch = jobsMapByTitle.get(candidate.vaga.toLowerCase().trim());
+        if (jobMatch) {
+          vagaLink = [{ id: jobMatch.id, value: jobMatch.titulo }];
+        }
+      // Se candidate.vaga já é um array de objetos (Baserow candidatos normais)
+      } else if (candidate.vaga && Array.isArray(candidate.vaga) && candidate.vaga.length > 0) {
+        const linkedVaga = candidate.vaga[0] as { id: number; value: string };
+        const jobMatch = jobsMapById.get(linkedVaga.id); // Confirma que a vaga existe
+        if (jobMatch) {
+          vagaLink = [{ id: jobMatch.id, value: jobMatch.titulo }];
+        }
+      }
+      return { ...newCandidate, vaga: vagaLink };
+    });
+    
+    // NOVO: Log para verificar os dados de jobs e candidates ANTES de enviar para o frontend
+    console.log("Server: Dados de Jobs (usuário):", userJobs.length);
+    console.log("Server: Dados de Candidates (sincronizados para usuário):", syncedCandidates.length);
+    syncedCandidates.forEach((c, i) => {
+        // Usar optional chaining para evitar erros se as propriedades forem null/undefined
+        console.log(`  Candidato ${i}: ID=${c.id}, Nome="${c.nome}", Vaga=${c.vaga ? c.vaga[0]?.value : 'N/A'}`);
+        // Usar optional chaining para acessar as propriedades
+        console.log(`    Sexo: ${c.sexo || 'N/A'}, Escolaridade: ${c.escolaridade || 'N/A'}, Idade: ${c.idade || 'N/A'}`);
+    });
+
+
+    res.json({ jobs: userJobs, candidates: syncedCandidates });
+
+  } catch (error: any) {
+    console.error('Erro ao buscar todos os dados (backend):', error);
+    res.status(500).json({ error: 'Falha ao carregar dados.' });
+  }
+});
+
+
+// --- Endpoint para upload de múltiplos currículos ---
+app.post('/api/upload-curriculums', upload.array('curriculumFiles'), async (req: Request, res: Response) => {
+  const { jobId, userId } = req.body;
+  const files = req.files as Express.Multer.File[];
+
+  console.log("Backend /api/upload-curriculums: Recebido");
+  console.log("  req.body:", req.body);
+  console.log("  req.files count:", files ? files.length : 0);
+
+
+  if (!jobId || !userId || !files || files.length === 0) {
+    console.error("Backend Erro 400: jobId, userId ou arquivos ausentes.");
+    return res.status(400).json({ error: 'Vaga, usuário e arquivos de currículo são obrigatórios.' });
+  }
+  
+  try {
+    const newCandidateEntries = [];
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) { 
+          console.error(`Backend Erro 400: Arquivo '${file.originalname}' muito grande.`);
+          return res.status(400).json({ success: false, message: `O arquivo '${file.originalname}' é muito grande. O limite é de 5MB.` });
       }
 
-      const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+      const uploadedFile = await baserowServer.uploadFileFromBuffer(file.buffer, file.originalname, file.mimetype);
+      
+      const newCandidateData = {
+        nome: file.originalname.split('.')[0] || 'Novo Candidato',
+        curriculo: [{ name: uploadedFile.name, url: uploadedFile.url }],
+        usuario: [parseInt(userId as string)], // Garante que userId seja um número
+        vaga: [parseInt(jobId as string)],     // Garante que jobId seja um número
+        score: null,
+        resumo_ia: null,
+        status: 'Triagem', 
+      };
 
-      await baserowServer.database.rows.update('users', Number(userId), {
-          'senha': hashedNewPassword
-      });
+      const createdCandidate = await baserowServer.post(CANDIDATOS_TABLE_ID, newCandidateData);
+      newCandidateEntries.push(createdCandidate);
+    }
 
-      res.json({ message: "Senha atualizada com sucesso." });
+    // Disparar UM ÚNICO webhook para o n8n com TODOS os candidatos em lote
+    const N8N_TRIAGEM_WEBHOOK_URL = 'https://webhook.focoserv.com.br/webhook/recrutamento'; // URL fornecida pelo usuário
+    
+    // Buscar informações da vaga e do usuário logado APENAS UMA VEZ
+    const jobInfo = await baserowServer.getRow(VAGAS_TABLE_ID, parseInt(jobId as string));
+    const userInfo = await baserowServer.getRow(USERS_TABLE_ID, parseInt(userId as string));
 
-  } catch (error) {
-      console.error('Error updating password:', error);
-      res.status(500).json({ error: "Erro ao atualizar a senha." });
+    if (N8N_TRIAGEM_WEBHOOK_URL && newCandidateEntries.length > 0 && jobInfo && userInfo) {
+      console.log('Disparando webhook em lote para o n8n (triagem de currículos)...');
+      
+      // Mapear os candidatos criados para o formato do payload do webhook
+      const candidatosParaWebhook = newCandidateEntries.map(candidate => ({
+        id: candidate.id,
+        nome: candidate.nome,
+        email: candidate.email,
+        telefone: candidate.telefone,
+        curriculo_url: candidate.curriculo?.[0]?.url,
+        status: candidate.status 
+      }));
+
+      const webhookPayload = {
+        tipo: 'triagem_curriculo_lote', 
+        recrutador: {
+          id: userInfo.id,
+          nome: userInfo.nome,
+          email: userInfo.Email,
+          empresa: userInfo.empresa
+        },
+        vaga: {
+          id: jobInfo.id,
+          titulo: jobInfo.titulo,
+          descricao: jobInfo.descricao,
+          endereco: jobInfo.Endereco,
+          requisitos_obrigatorios: jobInfo.requisitos_obrigatorios,
+          requisitos_desejaveis: jobInfo.requisitos_desejaveis
+        },
+        candidatos: candidatosParaWebhook 
+      };
+
+      try {
+        const n8nResponse = await fetch(N8N_TRIAGEM_WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(webhookPayload)
+        });
+
+        if (!n8nResponse.ok) {
+          const n8nErrorData = await n8nResponse.text(); 
+          console.error(`Webhook para n8n (triagem em lote) falhou! Status: ${n8nResponse.status}, Resposta: ${n8nErrorData}`);
+        } else {
+          console.log(`Webhook para n8n (triagem em lote) disparado com sucesso. Resposta do n8n:`, await n8nResponse.json());
+        }
+      } catch (webhookError) {
+        console.error("Erro ao disparar o webhook para o n8n (triagem em lote):", webhookError);
+      }
+    }
+
+
+    res.json({ success: true, message: `${files.length} currículo(s) enviado(s) para análise!`, newCandidates: newCandidateEntries });
+
+  } catch (error: any) {
+    console.error('Erro no upload de currículos (backend):', error);
+    res.status(500).json({ success: false, message: error.message || 'Falha ao fazer upload dos currículos.' });
   }
 });
 
-
-app.post('/api/upload-avatar', upload.single('avatar'), async (req: Request, res: Response) => {
-  const { userId } = req.body;
-  
-  if (!req.file) {
-      return res.status(400).send('Nenhum arquivo enviado.');
+// --- Endpoint: Buscar Agendamentos do Usuário ---
+app.get('/api/schedules/:userId', async (req: Request, res: Response) => {
+  const { userId } = req.params;
+  if (!userId) {
+    return res.status(400).json({ error: 'ID do usuário é obrigatório.' });
   }
 
   try {
-      const response = await baserowServer.userFiles.uploadFile(req.file);
-      const fileUrl = response.data.url;
+    const { results } = await baserowServer.get(AGENDAMENTOS_TABLE_ID, `?filter__Candidato__usuario__link_row_has=${userId}`);
+    
+    console.log('Dados de agendamentos brutos do Baserow (Backend):');
+    results.forEach((item: any, index: number) => {
+        console.log(`  Agendamento ${index}: Título="${item.Título}", Vaga ID="${item.Vaga?.[0]?.id}", Vaga Value="${item.Vaga?.[0]?.value}"`);
+    });
 
-      // Atualize a linha do usuário na tabela 'users' com a URL do avatar
-      await baserowServer.database.rows.update('users', Number(userId), {
-          'avatar_url': fileUrl
-      });
-      
-      res.json({ message: 'Avatar uploaded successfully', url: fileUrl });
-  } catch (error) {
-      console.error('Error uploading avatar:', error);
-      res.status(500).json({ error: 'Failed to upload avatar' });
+    res.json({ success: true, results: results || [] });
+
+  } catch (error: any) {
+    console.error('Erro ao buscar agendamentos (backend):', error);
+    res.status(500).json({ success: false, message: 'Falha ao buscar agendamentos.' });
   }
 });
 
-// Rota para iniciar o processo de autenticação Google
-app.get('/api/google/auth/connect', (req, res) => {
+// --- ENDPOINTS DE INTEGRAÇÃO GOOGLE CALENDAR ---
+
+app.get('/api/google/auth/connect', (req: Request, res: Response) => {
   const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId é obrigatório' });
 
-  if (!userId || typeof userId !== 'string') {
-    return res.status(400).send('userId é obrigatório.');
-  }
-
-  const scopes = [
-    'https://www.googleapis.com/auth/calendar'
-  ];
-
-  const authorizationUrl = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: scopes,
-    include_granted_scopes: true,
-    state: userId, // Passa o userId no 'state' para recuperá-lo no callback
-    prompt: 'consent'
+  const scopes = ['https://www.googleapis.com/auth/calendar.events'];
+  const url = oauth2Client.generateAuthUrl({
+    access_type: 'offline', scope: scopes, prompt: 'consent', state: userId.toString(),
   });
-
-  res.json({ authorizationUrl });
+  res.json({ url });
 });
 
-// Rota de callback do Google
-app.get('/api/google/auth/callback', async (req, res) => {
+app.get('/api/google/auth/callback', async (req: Request, res: Response) => {
   const { code, state } = req.query;
-  const userId = state as string;
+  const userId = state;
+  const closePopupScript = `<script>window.close();</script>`;
 
   if (!code) {
-    return res.status(400).send('Código de autorização não encontrado.');
-  }
-  if (!userId) {
-    return res.status(400).send('userId não encontrado no estado.');
+    console.error("Callback do Google recebido sem o código de autorização.");
+    return res.send(closePopupScript);
   }
 
   try {
     const { tokens } = await oauth2Client.getToken(code as string);
-    oauth2Client.setCredentials(tokens);
+    const { refresh_token } = tokens;
 
-    // Salvar o refresh_token no Baserow para o usuário correspondente
-    await baserowServer.database.rows.update('users', parseInt(userId, 10), {
-      'google_refresh_token': tokens.refresh_token
-    });
+    if (typeof userId === 'string') {
+        if (refresh_token) {
+            console.log('Refresh Token obtido e será salvo para o usuário:', userId);
+            await baserowServer.patch(USERS_TABLE_ID, parseInt(userId), { google_refresh_token: refresh_token });
+        } else {
+            console.warn('Nenhum refresh_token foi recebido para o usuário:', userId);
+        }
+    } else {
+        console.error('userId recebido não é uma string:', userId);
+    }
+    
+    res.send(closePopupScript);
 
-    // Redireciona de volta para a página de configurações no frontend
-    res.redirect(`${process.env.FRONTEND_URL}/dashboard/settings?google_auth=success`);
-
-  } catch (err: any) {
-    console.error('Erro ao obter token do Google:', err.message);
-    res.status(500).send('Falha na autenticação com o Google.');
+  } catch (error) {
+    console.error('--- ERRO DETALHADO NA TROCA DE TOKEN DO GOOGLE ---', error);
+    res.send(closePopupScript);
   }
 });
 
-app.get('/api/google/auth/status', async (req, res) => {
-    const { userId } = req.query;
-    if (!userId || typeof userId !== 'string') {
-      return res.status(400).send('userId é obrigatório.');
-    }
-  
-    try {
-      const { data } = await baserowServer.database.rows.get('users', parseInt(userId, 10));
-      const hasToken = !!data.google_refresh_token; // Verifica se o campo não está vazio
-      res.json({ isConnected: hasToken });
-    } catch (error) {
-      console.error('Erro ao verificar status de conexão com Google:', error);
-      res.status(500).json({ error: 'Erro ao verificar status de conexão.' });
-    }
-});
-  
-app.post('/api/google/auth/disconnect', async (req, res) => {
+app.post('/api/google/auth/disconnect', async (req: Request, res: Response) => {
     const { userId } = req.body;
-    if (!userId) {
-        return res.status(400).json({ error: 'userId é obrigatório.' });
-    }
-
-    try {
-        const { data: user } = await baserowServer.database.rows.get('users', Number(userId));
-
-        const refreshToken = user.google_refresh_token as string;
-        if (refreshToken) {
-            // Revoga o token no Google
-            await oauth2Client.revokeToken(refreshToken);
-        }
-
-        // Limpa o token no Baserow
-        await baserowServer.database.rows.update('users', Number(userId), {
-            'google_refresh_token': null // ou ""
-        });
-
-        res.json({ message: 'Desconectado do Google com sucesso.' });
-    } catch (error) {
-        console.error('Erro ao desconectar do Google:', error);
-        res.status(500).json({ error: 'Falha ao desconectar do Google.' });
-    }
+    await baserowServer.patch(USERS_TABLE_ID, parseInt(userId), { google_refresh_token: null });
+    console.log(`Desconectando calendário para o usuário ${userId}`);
+    res.json({ success: true, message: 'Conta Google desconectada.' });
 });
 
+app.get('/api/google/auth/status', async (req: Request, res: Response) => {
+  const { userId } = req.query;
+  if (!userId) return res.status(400).json({ error: 'userId é obrigatório' });
+  try {
+    const userResponse = await baserowServer.getRow(USERS_TABLE_ID, parseInt(userId as string));
+    const isConnected = !!userResponse.google_refresh_token;
+    res.json({ isConnected });
+  } catch (error) {
+    console.error('Erro ao verificar status da conexão Google para o usuário:', userId, error);
+    res.status(500).json({ error: 'Erro ao verificar status da conexão.' });
+  }
+});
 
-// Rota para criar um evento no Google Calendar
-app.post('/api/google/calendar/create-event', async (req, res) => {
-    const { userId, eventDetails } = req.body;
-    
-    if (!userId || !eventDetails) {
-        return res.status(400).json({ error: 'userId e eventDetails são obrigatórios.' });
+app.post('/api/google/calendar/create-event', async (req: Request, res: Response) => {
+    const { userId, eventData, candidate, job } = req.body;
+    if (!userId || !eventData || !candidate || !job) {
+        return res.status(400).json({ success: false, message: 'Dados insuficientes.' });
     }
 
     try {
-        const { data: user } = await baserowServer.database.rows.get('users', parseInt(userId, 10));
-        const refreshToken = user.google_refresh_token as string;
-        
+        const userResponse = await baserowServer.getRow(USERS_TABLE_ID, parseInt(userId));
+        const refreshToken = userResponse.google_refresh_token;
         if (!refreshToken) {
-            return res.status(401).json({ error: 'Usuário não conectado ao Google. Por favor, conecte-se primeiro.' });
+            return res.status(401).json({ success: false, message: 'Usuário não conectado ao Google Calendar.' });
         }
         
         oauth2Client.setCredentials({ refresh_token: refreshToken });
         const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
-        
+        const eventDescription = `Entrevista com o candidato: ${candidate.nome}.\n` +
+                                 `Telefone: ${candidate.telefone || 'Não informado'}\n\n` +
+                                 `--- Detalhes adicionais ---\n` +
+                                 `${eventData.details || 'Nenhum detalhe adicional.'}`;
         const event = {
-            summary: eventDetails.summary,
-            description: eventDetails.description,
-            start: {
-                dateTime: eventDetails.startDateTime,
-                timeZone: 'America/Sao_Paulo',
-            },
-            end: {
-                dateTime: eventDetails.endDateTime,
-                timeZone: 'America/Sao_Paulo',
-            },
-            attendees: eventDetails.attendees,
-            reminders: {
-                useDefault: false,
-                overrides: [
-                    { method: 'email', 'minutes': 24 * 60 },
-                    { method: 'popup', 'minutes': 10 },
-                ],
-            },
+            summary: eventData.title,
+            description: eventDescription,
+            start: { dateTime: eventData.start, timeZone: 'America/Sao_Paulo' },
+            end: { dateTime: eventData.end, timeZone: 'America/Sao_Paulo' },
+            reminders: { useDefault: true },
         };
 
-        const createdEvent = await calendar.events.insert({
-            calendarId: 'primary',
-            requestBody: event,
-            sendUpdates: 'all' // notifica os convidados por email
+        const response = await calendar.events.insert({
+            calendarId: 'primary', requestBody: event,
+        });
+        
+        console.log('Evento criado no Google Calendar com sucesso. Resposta detalhada do Google:');
+        console.log(response.data);
+
+        // Salvar agendamento no Baserow
+        await baserowServer.post(AGENDAMENTOS_TABLE_ID, {
+          'Título': eventData.title,
+          'Início': eventData.start,
+          'Fim': eventData.end,
+          'Detalhes': eventData.details,
+          'Candidato': [candidate.id],
+          'Vaga': [job.id],
+          'google_event_link': response.data.htmlLink
         });
 
-        res.status(201).json({ message: 'Evento criado com sucesso!', data: createdEvent.data });
 
-    } catch (error: any) {
-        console.error('Erro ao criar evento no Google Calendar:', error.message);
-        if (error.response && error.response.data) {
-            console.error('Detalhes do erro do Google:', error.response.data.error);
+        if (process.env.N8N_SCHEDULE_WEBHOOK_URL) {
+            console.log('Disparando webhook para o n8n...');
+            const webhookPayload = {
+                recruiter: userResponse, candidate: candidate, job: job,
+                interview: {
+                    title: eventData.title, startTime: eventData.start, endTime: eventData.end,
+                    details: eventData.details, googleEventLink: response.data.htmlLink
+                }
+            };
+            try {
+                fetch(process.env.N8N_SCHEDULE_WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(webhookPayload)
+                });
+                console.log('Webhook para n8n disparado com sucesso.');
+            } catch (webhookError) {
+                console.error("Erro ao disparar o webhook para o n8n:", webhookError);
+            }
         }
-        res.status(500).json({ error: 'Falha ao criar evento no Google Calendar.' });
+        res.json({ success: true, message: 'Evento criado com sucesso!', data: response.data });
+    } catch (error) {
+        console.error('Erro ao criar evento no Google Calendar:', error);
+        res.status(500).json({ success: false, message: 'Falha ao criar evento.' });
     }
 });
-
-// Rotas da aplicação
-app.get('/api/jobs', async (req, res) => {
-  try {
-    const { data } = await baserowServer.database.rows.list('jobs');
-    res.json(data.results);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch jobs' });
-  }
-});
-
-app.post('/api/jobs', async (req, res) => {
-  try {
-    const { data } = await baserowServer.database.rows.create('jobs', req.body);
-    res.status(201).json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create job' });
-  }
-});
-
-app.patch('/api/jobs/:jobId', async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    const { data } = await baserowServer.database.rows.update('jobs', Number(jobId), req.body);
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update job' });
-  }
-});
-
-app.delete('/api/jobs/:jobId', async (req, res) => {
-  try {
-    const { jobId } = req.params;
-    await baserowServer.database.rows.delete('jobs', Number(jobId));
-    res.status(204).send();
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete job' });
-  }
-});
-
-
-app.get('/api/candidates', async (req, res) => {
-  try {
-    const { data } = await baserowServer.database.rows.list('candidates');
-    res.json(data.results);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch candidates' });
-  }
-});
-
-app.patch('/api/candidates/:candidateId/status', async (req, res) => {
-  const { candidateId } = req.params;
-  const { statusId } = req.body; // e.g., { statusId: 443423 }
-
-  if (!statusId) {
-    return res.status(400).json({ error: "O 'statusId' é obrigatório." });
-  }
-
-  try {
-    const { data } = await baserowServer.database.rows.update('candidates', Number(candidateId), {
-      'status': [{ id: statusId }]
-    });
-    res.json(data);
-  } catch (error) {
-    console.error(`Erro ao atualizar status do candidato ${candidateId}:`, error);
-    res.status(500).json({ error: 'Falha ao atualizar o status do candidato.' });
-  }
-});
-
-
-app.get('/api/data/all/:userId', async (req, res) => {
-  const { userId } = req.params;
-  try {
-    const [jobsResponse, candidatesResponse] = await Promise.all([
-      baserowServer.database.rows.list('jobs', { filters: { "filter_type": "AND", "filters": [{ "type": "link_row_has", "field": "usuario", "value": userId }] } }),
-      baserowServer.database.rows.list('candidates', { filters: { "filter_type": "AND", "filters": [{ "type": "link_row_has", "field": "usuario", "value": userId }] } })
-    ]);
-    res.json({
-      jobs: jobsResponse.data.results,
-      candidates: candidatesResponse.data.results
-    });
-  } catch (error) {
-    console.error("Erro ao buscar todos os dados:", error);
-    res.status(500).json({ error: 'Failed to fetch all data' });
-  }
-});
-
-app.post('/api/auth/signup', async (req, res) => {
-  const { name, email, password } = req.body;
-
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: "Todos os campos são obrigatórios." });
-  }
-
-  try {
-    // 1. Verificar se o usuário já existe
-    const { data: existingUsers } = await baserowServer.database.rows.list('users', {
-      filters: {
-        filter_type: "AND",
-        filters: [{
-          type: "equal",
-          field: "email",
-          value: email
-        }]
-      }
-    });
-
-    if (existingUsers.count > 0) {
-      return res.status(409).json({ error: "Este e-mail já está em uso." });
-    }
-
-    // 2. Hash da senha
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // 3. Criar novo usuário no Baserow
-    const { data: newUser } = await baserowServer.database.rows.create('users', {
-      "nome": name,
-      "email": email,
-      "senha": hashedPassword
-    });
-
-    // Remover a senha da resposta
-    const { senha, ...userProfile } = newUser;
-
-    res.status(201).json({ message: "Usuário criado com sucesso!", user: userProfile });
-
-  } catch (error) {
-    console.error("Erro no cadastro:", error);
-    res.status(500).json({ error: "Ocorreu um erro interno no servidor." });
-  }
-});
-
-app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body;
-
-  try {
-    const { data: users } = await baserowServer.database.rows.list('users', {
-      filters: {
-        filter_type: "AND",
-        filters: [{ type: "equal", field: "email", value: email }]
-      }
-    });
-
-    if (users.count === 0) {
-      return res.status(404).json({ error: "Usuário não encontrado." });
-    }
-
-    const user = users.results[0];
-    const isPasswordCorrect = await bcrypt.compare(password, user.senha as string);
-
-    if (!isPasswordCorrect) {
-      return res.status(401).json({ error: "Credenciais inválidas." });
-    }
-
-    const { senha, ...userProfile } = user;
-
-    res.json({ message: "Login bem-sucedido!", user: userProfile });
-
-  } catch (error) {
-    console.error("Erro no login:", error);
-    res.status(500).json({ error: "Ocorreu um erro interno no servidor." });
-  }
-});
-
-// Rota de Webhook para o n8n
-app.post('/api/n8n/webhook/schedule', async (req, res) => {
-  const { candidateEmail, candidateName, summary, description, startDateTime, endDateTime } = req.body;
-  const n8nWebhookUrl = process.env.N8N_SCHEDULE_WEBHOOK_URL;
-
-  if (!n8nWebhookUrl) {
-    console.error("A URL do webhook do n8n não está configurada.");
-    return res.status(500).json({ error: "Serviço de agendamento indisponível." });
-  }
-
-  try {
-    await fetch(n8nWebhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        candidateEmail,
-        candidateName,
-        summary,
-        description,
-        startDateTime,
-        endDateTime
-      }),
-    });
-
-    res.status(200).json({ message: 'Solicitação de agendamento enviada.' });
-  } catch (error) {
-    console.error("Erro ao acionar webhook do n8n:", error);
-    res.status(500).json({ error: "Falha ao enviar solicitação de agendamento." });
-  }
-});
-
-app.post('/api/upload-curriculums', upload.array('curriculums'), async (req: Request, res: Response) => {
-  if (!req.files || (req.files as Express.Multer.File[]).length === 0) {
-      return res.status(400).json({ error: 'Nenhum currículo enviado.' });
-  }
-  
-  const files = req.files as Express.Multer.File[];
-  const { jobId, userId } = req.body;
-
-  if (!jobId || !userId) {
-      return res.status(400).json({ error: 'jobId e userId são obrigatórios.' });
-  }
-
-  try {
-      const uploadPromises = files.map(file => {
-          const formData = new FormData();
-          formData.append('file', new Blob([file.buffer]), file.originalname);
-          
-          return fetch(`${process.env.N8N_FILE_UPLOAD_URL}?jobId=${jobId}&userId=${userId}`, {
-              method: 'POST',
-              body: formData,
-          });
-      });
-      
-      const responses = await Promise.all(uploadPromises);
-
-      // Verificar se todos os uploads foram bem-sucedidos
-      const allOk = responses.every(response => response.ok);
-
-      if (allOk) {
-          res.status(200).json({ message: `${files.length} currículos enviados para processamento.` });
-      } else {
-          // Tenta extrair mensagens de erro das respostas que falharam
-          const errorMessages = await Promise.all(
-              responses
-                  .filter(r => !r.ok)
-                  .map(r => r.text())
-          );
-          console.error("Erros no upload para o n8n:", errorMessages);
-          throw new Error(`Falha ao enviar alguns arquivos. Detalhes: ${errorMessages.join(', ')}`);
-      }
-  } catch (error: any) {
-      console.error('Erro ao enviar currículos para o n8n:', error);
-      res.status(500).json({ error: `Falha ao processar os currículos. ${error.message}` });
-  }
-});
-
 
 app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
+  console.log(`Backend rodando em http://localhost:${port}`);
 });
