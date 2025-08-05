@@ -53,7 +53,7 @@ app.get('/', (req, res) => {
 app.get('/api/users/:userId', async (req, res) => {
   const { userId } = req.params;
   try {
-      const { data } = await (baserowServer as any).database.rows.get('users', Number(userId));
+      const { data } = await baserowServer.database.rows.get('users', Number(userId));
       res.json(data);
   } catch (error) {
       console.error('Failed to fetch user profile:', error);
@@ -67,7 +67,7 @@ app.patch('/api/users/:userId/profile', async (req: Request, res: Response) => {
 
   try {
       // Atualiza no Baserow
-      const { data } = await (baserowServer as any).database.rows.update('users', Number(userId), {
+      const { data } = await baserowServer.database.rows.update('users', Number(userId), {
           "nome": name,
           "email": email
       });
@@ -84,7 +84,7 @@ app.patch('/api/users/:userId/password', async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   try {
-      const { data: user } = await (baserowServer as any).database.rows.get('users', Number(userId));
+      const { data: user } = await baserowServer.database.rows.get('users', Number(userId));
 
       const isMatch = await bcrypt.compare(currentPassword, user.senha as string);
       if (!isMatch) {
@@ -93,7 +93,7 @@ app.patch('/api/users/:userId/password', async (req, res) => {
 
       const hashedNewPassword = await bcrypt.hash(newPassword, 10);
 
-      await (baserowServer as any).database.rows.update('users', Number(userId), {
+      await baserowServer.database.rows.update('users', Number(userId), {
           'senha': hashedNewPassword
       });
 
@@ -114,11 +114,11 @@ app.post('/api/upload-avatar', upload.single('avatar'), async (req: Request, res
   }
 
   try {
-      const response = await (baserowServer as any).userFiles.uploadFile(req.file);
+      const response = await baserowServer.userFiles.uploadFile(req.file);
       const fileUrl = response.data.url;
 
       // Atualize a linha do usuário na tabela 'users' com a URL do avatar
-      await (baserowServer as any).database.rows.update('users', Number(userId), {
+      await baserowServer.database.rows.update('users', Number(userId), {
           'avatar_url': fileUrl
       });
       
@@ -169,7 +169,7 @@ app.get('/api/google/auth/callback', async (req, res) => {
     oauth2Client.setCredentials(tokens);
 
     // Salvar o refresh_token no Baserow para o usuário correspondente
-    await (baserowServer as any).database.rows.update('users', parseInt(userId, 10), {
+    await baserowServer.database.rows.update('users', parseInt(userId, 10), {
       'google_refresh_token': tokens.refresh_token
     });
 
@@ -189,7 +189,7 @@ app.get('/api/google/auth/status', async (req, res) => {
     }
   
     try {
-      const { data } = await (baserowServer as any).database.rows.get('users', parseInt(userId, 10));
+      const { data } = await baserowServer.database.rows.get('users', parseInt(userId, 10));
       const hasToken = !!data.google_refresh_token; // Verifica se o campo não está vazio
       res.json({ isConnected: hasToken });
     } catch (error) {
@@ -205,7 +205,7 @@ app.post('/api/google/auth/disconnect', async (req, res) => {
     }
 
     try {
-        const { data: user } = await (baserowServer as any).database.rows.get('users', Number(userId));
+        const { data: user } = await baserowServer.database.rows.get('users', Number(userId));
 
         const refreshToken = user.google_refresh_token as string;
         if (refreshToken) {
@@ -214,7 +214,7 @@ app.post('/api/google/auth/disconnect', async (req, res) => {
         }
 
         // Limpa o token no Baserow
-        await (baserowServer as any).database.rows.update('users', Number(userId), {
+        await baserowServer.database.rows.update('users', Number(userId), {
             'google_refresh_token': null // ou ""
         });
 
@@ -235,7 +235,7 @@ app.post('/api/google/calendar/create-event', async (req, res) => {
     }
 
     try {
-        const { data: user } = await (baserowServer as any).database.rows.get('users', parseInt(userId, 10));
+        const { data: user } = await baserowServer.database.rows.get('users', parseInt(userId, 10));
         const refreshToken = user.google_refresh_token as string;
         
         if (!refreshToken) {
@@ -286,7 +286,7 @@ app.post('/api/google/calendar/create-event', async (req, res) => {
 // Rotas da aplicação
 app.get('/api/jobs', async (req, res) => {
   try {
-    const { data } = await (baserowServer as any).database.rows.list('jobs');
+    const { data } = await baserowServer.database.rows.list('jobs');
     res.json(data.results);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch jobs' });
@@ -295,7 +295,7 @@ app.get('/api/jobs', async (req, res) => {
 
 app.post('/api/jobs', async (req, res) => {
   try {
-    const { data } = await (baserowServer as any).database.rows.create('jobs', req.body);
+    const { data } = await baserowServer.database.rows.create('jobs', req.body);
     res.status(201).json(data);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create job' });
@@ -305,7 +305,7 @@ app.post('/api/jobs', async (req, res) => {
 app.patch('/api/jobs/:jobId', async (req, res) => {
   try {
     const { jobId } = req.params;
-    const { data } = await (baserowServer as any).database.rows.update('jobs', Number(jobId), req.body);
+    const { data } = await baserowServer.database.rows.update('jobs', Number(jobId), req.body);
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update job' });
@@ -315,7 +315,7 @@ app.patch('/api/jobs/:jobId', async (req, res) => {
 app.delete('/api/jobs/:jobId', async (req, res) => {
   try {
     const { jobId } = req.params;
-    await (baserowServer as any).database.rows.delete('jobs', Number(jobId));
+    await baserowServer.database.rows.delete('jobs', Number(jobId));
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete job' });
@@ -325,7 +325,7 @@ app.delete('/api/jobs/:jobId', async (req, res) => {
 
 app.get('/api/candidates', async (req, res) => {
   try {
-    const { data } = await (baserowServer as any).database.rows.list('candidates');
+    const { data } = await baserowServer.database.rows.list('candidates');
     res.json(data.results);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch candidates' });
@@ -341,7 +341,7 @@ app.patch('/api/candidates/:candidateId/status', async (req, res) => {
   }
 
   try {
-    const { data } = await (baserowServer as any).database.rows.update('candidates', Number(candidateId), {
+    const { data } = await baserowServer.database.rows.update('candidates', Number(candidateId), {
       'status': [{ id: statusId }]
     });
     res.json(data);
@@ -356,8 +356,8 @@ app.get('/api/data/all/:userId', async (req, res) => {
   const { userId } = req.params;
   try {
     const [jobsResponse, candidatesResponse] = await Promise.all([
-      (baserowServer as any).database.rows.list('jobs', { filters: { "filter_type": "AND", "filters": [{ "type": "link_row_has", "field": "usuario", "value": userId }] } }),
-      (baserowServer as any).database.rows.list('candidates', { filters: { "filter_type": "AND", "filters": [{ "type": "link_row_has", "field": "usuario", "value": userId }] } })
+      baserowServer.database.rows.list('jobs', { filters: { "filter_type": "AND", "filters": [{ "type": "link_row_has", "field": "usuario", "value": userId }] } }),
+      baserowServer.database.rows.list('candidates', { filters: { "filter_type": "AND", "filters": [{ "type": "link_row_has", "field": "usuario", "value": userId }] } })
     ]);
     res.json({
       jobs: jobsResponse.data.results,
@@ -378,7 +378,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
   try {
     // 1. Verificar se o usuário já existe
-    const { data: existingUsers } = await (baserowServer as any).database.rows.list('users', {
+    const { data: existingUsers } = await baserowServer.database.rows.list('users', {
       filters: {
         filter_type: "AND",
         filters: [{
@@ -397,7 +397,7 @@ app.post('/api/auth/signup', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     // 3. Criar novo usuário no Baserow
-    const { data: newUser } = await (baserowServer as any).database.rows.create('users', {
+    const { data: newUser } = await baserowServer.database.rows.create('users', {
       "nome": name,
       "email": email,
       "senha": hashedPassword
@@ -418,7 +418,7 @@ app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    const { data: users } = await (baserowServer as any).database.rows.list('users', {
+    const { data: users } = await baserowServer.database.rows.list('users', {
       filters: {
         filter_type: "AND",
         filters: [{ type: "equal", field: "email", value: email }]
