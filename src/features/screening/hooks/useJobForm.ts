@@ -5,7 +5,7 @@ import { JobFormData, JobPosting } from '../types';
 import { useAuth } from '../../auth/hooks/useAuth';
 
 // Pega a URL base da API das variáveis de ambiente do Vite
-const API_BASE_URL = 'http://localhost:3001';
+const API_BASE_URL = 'https://endpoint.setorrp.com.br';
 
 export const useJobForm = () => {
   const { profile } = useAuth();
