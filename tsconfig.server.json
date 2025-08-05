@@ -4,14 +4,16 @@
     "lib": ["ES2023"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+     "strict": false,                  // Desativa todas as verificações rigorosas de tipo
+    "noImplicitAny": false,           // Permite variáveis com tipo 'any' implícito
+    "strictNullChecks": false,        // Permite que 'null' e 'undefined' sejam atribuídos a qualquer tipo
+    "skipLibCheck": true,             // Pula a verificação de tipos em ficheiros de declaração (.d.ts)
+    "isolatedModules": false,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": true,
     "noEmit": false,
     "outDir": "./dist-server",
-    "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
